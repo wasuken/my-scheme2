@@ -4,9 +4,7 @@
 					("-" (lambda (x y) (- x y)))
 					("*" (lambda (x y) (* x y)))
 					("/" (lambda (x y) (/ x y)))
-					("cons" (lambda (x y) (cons x y)))
-					("if" (lambda (x y z) (if x y z)))
-					("lambda" (lambda (x y) (eval `(lambda))))))
+					("cons" (lambda (x y) (cons x y)))))
 
 (defun string->string-one (text)
   (mapcar #'(lambda (x) (coerce `(,x) 'string)) (concatenate 'list text)))
@@ -104,7 +102,18 @@
 		(t (cadr (find str *var-lst* :key #'car :test #'string=)))))
 
 (defun eval-formula (lst)
-  (eval (mapcar #'type-convert lst)))
+  (let ((key (car lst)))
+	(cond ((string= key "def")
+		   (setq *var-lst* (remove-duplicates
+							(append *var-lst* `((,(cadr lst) ,@(mapcar #'type-convert (cddr lst)))))
+							:key #'car
+							:test #'string=)))
+		  ;; ???????
+		  ((string= key "lambda")
+		   )
+		  ;; ????????????????????
+		  ((string= key "quote"))
+		  (t (eval (mapcar #'type-convert lst))))))
 
 (defun numbered-lst-range-replace (begin end old-lst new-lst)
   (let ((result '()))
