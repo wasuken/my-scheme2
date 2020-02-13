@@ -86,20 +86,22 @@
 	  (dolist (str str-list)
 		(cond ((and str-flg (string= "\"" str))
 			   (setq node-lst (append node-lst `(,(concatenate 'string str-tmp "\""))))
+			   (setq str-tmp "")
 			   (setq str-flg nil))
 			  (str-flg
 			   (setq str-tmp (concatenate 'string str-tmp str)))
 			  ((and quote-flg (string= "@" str))
 			   (setq node-lst (append node-lst `(,(concatenate 'string quote-tmp "@"))))
+			   (setq quote-tmp "")
 			   (setq quote-flg nil))
 			  (quote-flg
 			   (setq quote-tmp (concatenate 'string quote-tmp str)))
-			  (t (cond ((and (string= "@" str) (not quote-flg))
+			  (t (cond ((and (string= "@" str) (not str-flg))
+						(setq quote-tmp (concatenate 'string quote-tmp "@"))
+						(setq quote-flg t))
+					   ((and (string= "\"" str) (not quote-flg))
 						(setq str-tmp (concatenate 'string str-tmp "\""))
 						(setq str-flg t))
-					   ((and (string= "\"" str) (not str-flg))
-						(setq quote-tmp (concatenate 'string quote-tmp "\""))
-						(setq quote-flg t))
 					   ((string= "(" str)
 						(if (< 0 (length variable-tmp))
 							(clear-vt-and-add-nlst))
@@ -117,9 +119,9 @@
 (defun type-convert (str)
   (cond
 	;; quote formula
-	((ppcre:scan "^@.*@" str)
+	((ppcre:scan "^@.*@$" str)
 	 str)
-	((ppcre:scan "^\".*\"" str)
+	((ppcre:scan "^\".*\"$" str)
 	 (ppcre:regex-replace-all "\"" str ""))
 	((ppcre:scan "^[0-9]+$" str)
 	 (parse-integer str))
@@ -152,83 +154,85 @@
 	result))
 
 (defun eval-inter (parsed)
-  (if (>= 1 (count "(" (cadr (car parsed)) :test #'string=))
-	  (eval-formula (remove ")"
-							(remove "(" (cadr (car parsed))
-									:test #'string=)
-							:test #'string=))
-	  (let* ((leafs (remove-if #'(lambda (x)
-								   (< 1 (count "(" (nth 1 x) :test #'string=)))
-							   parsed))
-			 (leafs-remove->paren (mapcar #'(lambda (x)
-											  `(,(car x) ,(remove ")"
-																  (remove "(" (nth 1 x)
-																		  :test #'string=)
-																  :test #'string=)))
-										  leafs))
-			 (leafs-evaled (mapcar #'(lambda (x) `(,(car x) ,(eval-formula (nth 1 x))))
-								   leafs-remove->paren))
-			 (numbered-origin (mapcar #'(lambda (x y) `(,x ,y))
-									  (mylib:range 0 (length (cadr (car parsed))))
-									  (cadr (car parsed))))
-			 (result numbered-origin))
-		(dolist (pos-value leafs-evaled)
-		  (setq result (numbered-lst-range-replace
-						(car (car pos-value))
-						(1+ (cdr (car pos-value)))
-						result
-						`(,(car (cdr pos-value))))))
-		(let ((result-str (string-trim '(#\Space #\newline #\tab)
-									   (format nil "~{ ~A~}"
-											   (mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
-																		 x
-																		 (cadr x)))
-													   result)))))
-		  (eval-inter (parser result-str))))))
+  (cond ((>= 1 (count "(" (cadr (car parsed)) :test #'string=))
+		 (eval-formula (remove ")"
+							   (remove "(" (cadr (car parsed))
+									   :test #'string=)
+							   :test #'string=)))
+		(t (let* ((leafs (remove-if #'(lambda (x)
+										(< 1 (count "(" (nth 1 x) :test #'string=)))
+									parsed))
+				  (leafs-remove->paren (mapcar #'(lambda (x)
+												   `(,(car x) ,(remove ")"
+																	   (remove "(" (nth 1 x)
+																			   :test #'string=)
+																	   :test #'string=)))
+											   leafs))
+				  (leafs-evaled (mapcar #'(lambda (x) `(,(car x) ,(eval-formula (nth 1 x))))
+										leafs-remove->paren))
+				  (numbered-origin (mapcar #'(lambda (x y) `(,x ,y))
+										   (mylib:range 0 (length (cadr (car parsed))))
+										   (cadr (car parsed))))
+				  (result numbered-origin))
+			 (dolist (pos-value leafs-evaled)
+			   (setq result (numbered-lst-range-replace
+							 (car (car pos-value))
+							 (1+ (cdr (car pos-value)))
+							 result
+							 `(,(car (cdr pos-value))))))
+			 (let ((result-str (string-trim '(#\Space #\newline #\tab)
+											(format nil "~{ ~A~}"
+													(mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
+																			  x
+																			  (cadr x)))
+															result)))))
+			   (eval-inter (parser result-str)))))))
 
 (defun my-eval-read ()
   (let ((parsed (parser (read))))
 	(eval-inter parsed)))
 
 (defun my-eval (text)
-  (labels ((rangep (pair val)
-			 (and (<= (car pair) val)
-				  (>= (cdr pair) val))))
-	(let* ((parsed (parser text))
-		   ;; quiteのものは全て取得
-		   (quote-lst (remove-if-not #'(lambda (x) (string= "quote" (nth 1 (nth 1 x))))
-									 parsed))
-		   ;; quoteの中のquoteは取り除く
-		   (quote-removed-lst (remove-if #'(lambda (x)
-											 (find-if #'(lambda (y)
-														  (and (not (equal (car y) (car x)))
-															   (rangep (car y) (car x))))
-													  quote-lst))
-										 quote-lst))
-		   (first-numbered-parsed `(,(car (car parsed))
-									 ,(mapcar #'(lambda (y z) `(,y ,z))
-											  (mylib:range 0 (length (cadr (car parsed))))
-											  (cadr (car parsed)))))
-		   ;; quote対象の文字列を置き換える
-		   (replaced-parsed (cadr first-numbered-parsed)))
-	  (dolist (quote-removed quote-removed-lst)
-	  	(setq replaced-parsed
-	  		  (numbered-lst-range-replace
-			   (caar quote-removed)
-			   (cdr (car quote-removed))
-	  		   replaced-parsed
-	  		   `(,(string-trim '(#\Space #\newline #\tab)
-	  						   (format nil "@~{ ~A~}@" (reverse (cdr (reverse (cddr (cadr quote-removed)))))))))))
-	  (print (string-trim '(#\Space #\newline #\tab)
-	  								   (format nil "~{ ~A~}"
-	  										   (mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
-	  																	 x
-	  																	 (cadr x)))
-	  												   replaced-parsed))))
-	  (eval-inter (parser (string-trim '(#\Space #\newline #\tab)
-	  								   (format nil "~{ ~A~}"
-	  										   (mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
-	  																	 x
-	  																	 (cadr x)))
-	  												   replaced-parsed)))))
-	  )))
+  (cond ((type-convert text)
+		 (type-convert text))
+		(t (labels ((rangep (pair val)
+					  (and (<= (car pair) val)
+						   (>= (cdr pair) val))))
+			 (let* ((parsed (parser text))
+					;; quiteのものは全て取得
+					(quote-lst (remove-if-not #'(lambda (x) (string= "quote" (nth 1 (nth 1 x))))
+											  parsed))
+					;; quoteの中のquoteは取り除く
+					(quote-removed-lst (remove-if #'(lambda (x)
+													  (find-if #'(lambda (y)
+																   (and (not (equal (car y) (car x)))
+																		(rangep (car y) (car x))))
+															   quote-lst))
+												  quote-lst))
+					(first-numbered-parsed `(,(car (car parsed))
+											  ,(mapcar #'(lambda (y z) `(,y ,z))
+													   (mylib:range 0 (length (cadr (car parsed))))
+													   (cadr (car parsed)))))
+					;; quote対象の文字列を置き換える
+					(replaced-parsed (cadr first-numbered-parsed)))
+			   (dolist (quote-removed quote-removed-lst)
+	  			 (setq replaced-parsed
+	  				   (numbered-lst-range-replace
+						(caar quote-removed)
+						(cdr (car quote-removed))
+	  					replaced-parsed
+	  					`(,(string-trim '(#\Space #\newline #\tab)
+	  									(format nil "@~{ ~A~}@" (reverse (cdr (reverse (cddr (cadr quote-removed)))))))))))
+			   ;; (print (parser (string-trim '(#\Space #\newline #\tab)
+			   ;; 								   (format nil "~{ ~A~}"
+			   ;; 										   (mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
+			   ;; 																	 x
+			   ;; 																	 (cadr x)))
+			   ;; 												   replaced-parsed)))))
+			   (eval-inter (parser (string-trim '(#\Space #\newline #\tab)
+	  											(format nil "~{ ~A~}"
+	  													(mapcar #'(lambda (x) (if (or (integerp x) (stringp x))
+	  																			  x
+	  																			  (cadr x)))
+	  															replaced-parsed)))))
+			   )))))
