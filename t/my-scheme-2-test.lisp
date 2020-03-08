@@ -20,11 +20,11 @@
   (my-scheme-2:my-eval "(def x 2)")
   (is (my-scheme-2:my-eval "(+ 1 x)") 3)
   (my-scheme-2:my-eval "(def x 10)")
-  (is (my-scheme-2:my-eval "(+ 1 x)") 11))
+  (is (my-scheme-2:my-eval "(+ 1 x)") 11)
+  (my-scheme-2:my-eval "(def foo \"hoge\")")
+  (is (my-scheme-2:my-eval "foo") "hoge"))
 
 (subtest "Special operations Testing(now failed)"
-  (my-scheme-2:my-eval "(def foo \"hoge\")")
-  (is (my-scheme-2:my-eval "foo") "hoge")
   (is (my-scheme-2:my-eval "((lambda (x) (+ x 1)) 1)") 2)
-  (print (my-scheme-2:my-eval "(def hoge (quote (lambda (y) (+ y 1))))"))
+  (my-scheme-2:my-eval "(def hoge (quote (lambda (y) (+ y 1))))")
   (is (my-scheme-2:my-eval "(hoge 10)") 11))
