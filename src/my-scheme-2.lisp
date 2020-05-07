@@ -175,3 +175,39 @@
 	  (format t "~%")
 	  (repl))
 	))
+
+;;; 引用元: https://stackoverrun.com/ja/q/179294
+(defun my-command-line ()
+  (or
+   #+CLISP *args*
+   #+SBCL *posix-argv*
+   #+LISPWORKS system:*line-arguments-list*
+   #+CMU extensions:*command-line-words*
+   nil))
+
+(defun s-formula-split (str)
+  (let ((result '())
+		(current "")
+		(lparen-cnt 0)
+		(rparen-cnt 0))
+	(loop x in (string->string-one str)
+	   do (cond ((and (= 0 lparen-cnt rparen-cnt) (not (string= "" current)))
+				 (setq result (append result `(,current)))
+				 (setq current ""))
+				((string= "(" x)
+				 (incf lparen-cnt))
+				((string= ")" x)
+				 (incf rparen-cnt)
+				 (decf lparen-cnt))
+				(t (setq current (format nil "~A~A" current x)))))
+	result))
+
+(defun read-file ()
+  (let ((param-one (nth 1 (my-command-line))))
+	(when (not param-one)
+	  (error "Not Input File Path."))
+	(let ((file-contents ""))
+	  (with-open-file (s param-one)
+		(setq file-contents (format nil "~A~A" file-contents (read-line s))))
+	  (loop x in (s-formula-split file-contents)
+		   (do (print (my-eval (semantic-analysis (lexer x)))))))))
