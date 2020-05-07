@@ -1,0 +1,4 @@
+(def x 10)
+(def y 20)
+(define (hoge a b) (+ a b))
+(hoge x y)
